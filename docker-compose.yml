@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: skribblepro-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-draw_destroy}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-draw_destroy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - skribble-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: skribblepro-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - skribble-net
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: backend/api-gateway/Dockerfile
+    container_name: skribblepro-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ROOM_SERVICE_HOST: room-service
+      GAME_ENGINE_HOST: game-engine
+      WORD_SERVICE_HOST: word-service
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - skribble-net
+
+  room-service:
+    build:
+      context: .
+      dockerfile: backend/room-service/Dockerfile
+    container_name: skribblepro-room-service
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-draw_destroy}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - skribble-net
+
+  game-engine:
+    build:
+      context: .
+      dockerfile: backend/game-engine/Dockerfile
+    container_name: skribblepro-game-engine
+    ports:
+      - "8082:8082"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      WORD_SERVICE_HOST: word-service
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - skribble-net
+
+  word-service:
+    build:
+      context: .
+      dockerfile: backend/word-service/Dockerfile
+    container_name: skribblepro-word-service
+    ports:
+      - "8083:8083"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - skribble-net
+
+networks:
+  skribble-net:
+    driver: bridge
+
+volumes:
+  postgres_data:

@@ -1,0 +1,74 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:5173"
+              - "http://127.0.0.1:5173"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+
+      routes:
+        - id: room-service
+          uri: http://${ROOM_SERVICE_HOST:localhost}:8081
+          predicates:
+            - Path=/rooms/**
+
+        - id: room-service-actuator
+          uri: http://${ROOM_SERVICE_HOST:localhost}:8081
+          predicates:
+            - Path=/rooms-actuator/**
+          filters:
+            - StripPrefix=1
+
+        - id: game-engine
+          uri: http://${GAME_ENGINE_HOST:localhost}:8082
+          predicates:
+            - Path=/games/**
+
+        - id: game-engine-actuator
+          uri: http://${GAME_ENGINE_HOST:localhost}:8082
+          predicates:
+            - Path=/games-actuator/**
+          filters:
+            - StripPrefix=1
+
+        - id: game-engine-ws
+          uri: ws://${GAME_ENGINE_HOST:localhost}:8082
+          predicates:
+            - Path=/ws/**
+
+        - id: word-service-actuator
+          uri: http://${WORD_SERVICE_HOST:localhost}:8083
+          predicates:
+            - Path=/words-actuator/**
+          filters:
+            - StripPrefix=1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
