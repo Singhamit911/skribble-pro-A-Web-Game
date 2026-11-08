@@ -43,3 +43,8 @@ pnpm-debug.log*
 ### Environment & Secrets ###
 .env
 *.log
+
+### Private Notes ###
+my-notes/
+my notes/
+SPRINT-*-EXPLAINED.md

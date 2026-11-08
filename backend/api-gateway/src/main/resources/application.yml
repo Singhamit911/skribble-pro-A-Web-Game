@@ -12,6 +12,8 @@ spring:
 
   cloud:
     gateway:
+      forwarded:
+        enabled: false
       globalcors:
         cors-configurations:
           '[/**]':
@@ -31,7 +33,7 @@ spring:
         - id: room-service
           uri: http://${ROOM_SERVICE_HOST:localhost}:8081
           predicates:
-            - Path=/rooms/**
+            - Path=/rooms, /rooms/**
 
         - id: room-service-actuator
           uri: http://${ROOM_SERVICE_HOST:localhost}:8081
@@ -43,7 +45,7 @@ spring:
         - id: game-engine
           uri: http://${GAME_ENGINE_HOST:localhost}:8082
           predicates:
-            - Path=/games/**
+            - Path=/games, /games/**
 
         - id: game-engine-actuator
           uri: http://${GAME_ENGINE_HOST:localhost}:8082

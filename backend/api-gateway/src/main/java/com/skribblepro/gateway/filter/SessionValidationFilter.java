@@ -17,7 +17,7 @@ import java.util.Map;
 @Component
 public class SessionValidationFilter implements GlobalFilter, Ordered {
 
-    private static final Duration SESSION_TTL = Duration.ofHours(24);
+    private static final Duration SESSION_TTL = Duration.ofHours(1);
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
 
@@ -35,8 +35,9 @@ public class SessionValidationFilter implements GlobalFilter, Ordered {
         String path = exchange.getRequest().getURI().getPath();
         HttpMethod method = exchange.getRequest().getMethod();
 
-        // Allow public/handshake endpoints without validation
-        if ((path.equals("/sessions") && method == HttpMethod.POST)
+        // Allow public/handshake endpoints and CORS preflight without validation
+        if (method == HttpMethod.OPTIONS
+                || (path.equals("/sessions") && method == HttpMethod.POST)
                 || path.startsWith("/actuator")
                 || path.startsWith("/rooms-actuator")
                 || path.startsWith("/games-actuator")

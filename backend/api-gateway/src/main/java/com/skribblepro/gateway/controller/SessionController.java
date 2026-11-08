@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 public class SessionController {
 
     private static final Pattern HEX_COLOR = Pattern.compile("^#[0-9A-Fa-f]{6}$");
-    private static final Duration SESSION_TTL = Duration.ofHours(3);
+    private static final Duration SESSION_TTL = Duration.ofHours(1);
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
 
