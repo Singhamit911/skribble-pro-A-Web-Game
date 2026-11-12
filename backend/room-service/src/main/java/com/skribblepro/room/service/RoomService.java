@@ -8,6 +8,8 @@ import com.skribblepro.room.model.RoomPlayer;
 import com.skribblepro.room.model.RoomPlayerId;
 import com.skribblepro.room.repository.RoomPlayerRepository;
 import com.skribblepro.room.repository.RoomRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ import java.util.UUID;
 @Service
 public class RoomService {
 
+    private static final Logger log = LoggerFactory.getLogger(RoomService.class);
     private static final Duration ROOM_TTL = Duration.ofHours(4);
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Omit confusing letters: I, O, 0, 1
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -84,6 +87,8 @@ public class RoomService {
         redisTemplate.opsForHash().put(playersKey, hostGuestId, hostName + "|" + hostColor);
         redisTemplate.expire(playersKey, ROOM_TTL);
 
+        log.info("Created room [{}] in PostgreSQL and Redis. Host: '{}' ({})", code, hostName, hostGuestId);
+
         List<RoomPlayerDto> players = List.of(new RoomPlayerDto(hostGuestId, hostName, hostColor, true));
         return new RoomResponse(
                 roomId,
@@ -108,12 +113,14 @@ public class RoomService {
         Map<Object, Object> roomData = redisTemplate.opsForHash().entries(roomKey);
 
         if (roomData == null || roomData.isEmpty()) {
+            log.info("Cache miss for room [{}]. Rehydrating from PostgreSQL...", code);
             // Cache miss: try rehydrating from PostgreSQL
             Room room = roomRepository.findByCode(code)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found: " + code));
             return rehydrateAndGet(room);
         }
 
+        log.debug("Cache hit for room [{}]", code);
         return buildResponseFromRedis(code, roomData, playersKey);
     }
 
@@ -138,6 +145,7 @@ public class RoomService {
 
         String status = (String) roomData.get("status");
         if (!"WAITING".equalsIgnoreCase(status)) {
+            log.warn("Join rejected: room [{}] status is {}", code, status);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot join room. Game status is " + status);
         }
 
@@ -146,10 +154,12 @@ public class RoomService {
 
         // Check if player is already present
         if (currentPlayers.containsKey(guestId)) {
+            log.debug("Player '{}' ({}) already in room [{}] (idempotent join)", name, guestId, code);
             return buildResponseFromRedis(code, roomData, playersKey);
         }
 
         if (currentPlayers.size() >= maxPlayers) {
+            log.warn("Join rejected: room [{}] is full ({}/{} players)", code, currentPlayers.size(), maxPlayers);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Room is full (max " + maxPlayers + " players)");
         }
 
@@ -165,6 +175,8 @@ public class RoomService {
         int updatedCount = currentPlayers.size() + 1;
         redisTemplate.opsForHash().put(roomKey, "playerCount", String.valueOf(updatedCount));
         redisTemplate.expire(roomKey, ROOM_TTL);
+
+        log.info("Player '{}' ({}) joined room [{}]. Total players: {}", name, guestId, code, updatedCount);
 
         roomData.put("playerCount", String.valueOf(updatedCount));
         return buildResponseFromRedis(code, roomData, playersKey);
@@ -199,6 +211,7 @@ public class RoomService {
                 r.setStatus("FINISHED");
                 roomRepository.save(r);
             });
+            log.info("Room [{}] is now empty. Deleting Redis keys and marking FINISHED in PostgreSQL", code);
         } else {
             int newCount = remainingPlayers.size();
             redisTemplate.opsForHash().put(roomKey, "playerCount", String.valueOf(newCount));
@@ -217,6 +230,9 @@ public class RoomService {
                     r.setHostName(newHostName);
                     roomRepository.save(r);
                 });
+                log.warn("Host '{}' left room [{}]. Elected new host: '{}' ({})", hostGuestId, code, newHostName, newHostId);
+            } else {
+                log.info("Player ({}) left room [{}]. Remaining players: {}", guestId, code, newCount);
             }
 
             redisTemplate.expire(roomKey, ROOM_TTL);

@@ -1,5 +1,7 @@
 package com.skribblepro.gateway.filter;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -17,6 +19,7 @@ import java.util.Map;
 @Component
 public class SessionValidationFilter implements GlobalFilter, Ordered {
 
+    private static final Logger log = LoggerFactory.getLogger(SessionValidationFilter.class);
     private static final Duration SESSION_TTL = Duration.ofHours(1);
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
@@ -48,12 +51,14 @@ public class SessionValidationFilter implements GlobalFilter, Ordered {
 
         String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            log.warn("Unauthorized request blocked for path [{}]: missing Bearer Authorization header", path);
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }
 
         String token = authHeader.substring(7).trim();
         if (token.isEmpty()) {
+            log.warn("Unauthorized request blocked for path [{}]: empty Bearer token", path);
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }
@@ -64,15 +69,20 @@ public class SessionValidationFilter implements GlobalFilter, Ordered {
                 .collectMap(Map.Entry::getKey, Map.Entry::getValue)
                 .flatMap(sessionData -> {
                     if (sessionData == null || sessionData.isEmpty() || !sessionData.containsKey("guestId")) {
+                        log.warn("Unauthorized request blocked for path [{}]: session token not found or expired in Redis", path);
                         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
                         return exchange.getResponse().setComplete();
                     }
 
+                    String guestId = sessionData.get("guestId");
+                    String name = sessionData.get("name");
+                    log.debug("Session validated for guest '{}' ({}) -> forwarding to [{}]", name, guestId, path);
+
                     return redisTemplate.expire(key, SESSION_TTL)
                             .then(Mono.defer(() -> {
                                 ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
-                                        .header("X-Guest-Id", sessionData.get("guestId"))
-                                        .header("X-Guest-Name", sessionData.get("name"))
+                                        .header("X-Guest-Id", guestId)
+                                        .header("X-Guest-Name", name)
                                         .header("X-Guest-Color", sessionData.get("color"))
                                         .build();
 

@@ -3,6 +3,8 @@ package com.skribblepro.room.controller;
 import com.skribblepro.dto.room.CreateRoomRequest;
 import com.skribblepro.dto.room.RoomResponse;
 import com.skribblepro.room.service.RoomService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,6 +20,8 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/rooms")
 public class RoomController {
+
+    private static final Logger log = LoggerFactory.getLogger(RoomController.class);
 
     private final RoomService roomService;
 
@@ -36,12 +40,14 @@ public class RoomController {
         CreateRoomRequest safeRequest = request != null ? request : new CreateRoomRequest(3, 80, 8, "General");
         String color = (guestColor != null && !guestColor.isBlank()) ? guestColor : "#FF6B6B";
 
+        log.info("REST POST /rooms: guest '{}' ({}) creating room with category='{}', rounds={}", guestName, guestId, safeRequest.category(), safeRequest.rounds());
         RoomResponse response = roomService.createRoom(guestId, guestName, color, safeRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/{code}")
     public ResponseEntity<RoomResponse> getRoom(@PathVariable String code) {
+        log.debug("REST GET /rooms/{}", code);
         RoomResponse response = roomService.getRoom(code);
         return ResponseEntity.ok(response);
     }
@@ -56,6 +62,7 @@ public class RoomController {
         validateGuestHeaders(guestId, guestName);
         String color = (guestColor != null && !guestColor.isBlank()) ? guestColor : "#FF6B6B";
 
+        log.info("REST POST /rooms/{}/join: guest '{}' ({}) joining", code, guestName, guestId);
         RoomResponse response = roomService.joinRoom(code, guestId, guestName, color);
         return ResponseEntity.ok(response);
     }
@@ -66,8 +73,10 @@ public class RoomController {
             @RequestHeader(value = "X-Guest-Id", required = false) String guestId) {
 
         if (guestId == null || guestId.isBlank()) {
+            log.warn("REST DELETE /rooms/{}/leave rejected: missing X-Guest-Id", code);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing X-Guest-Id header");
         }
+        log.info("REST DELETE /rooms/{}/leave: guest ({}) leaving", code, guestId);
         roomService.leaveRoom(code, guestId);
         return ResponseEntity.noContent().build();
     }
